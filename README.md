@@ -1,4 +1,4 @@
-# dgx-spark-tuning
+# DeepSeek-V4-Flash-0731 · TP=4 · 4× DGX Spark
 
 Tuning DeepSeek-V4-Flash-0731 on 4× DGX Spark, one variable at a time.
 
