@@ -1,4 +1,4 @@
-# gx10-bench — measuring DeepSeek-V4-Flash honestly on 4× DGX Spark
+# dgx-spark-tuning — measuring DeepSeek-V4-Flash honestly on 4× DGX Spark
 
 Four small tools and one result, from tuning DeepSeek-V4-Flash-0731 at TP=4 on GB10.
 
