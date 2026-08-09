@@ -1,7 +1,9 @@
 # DeepSeek-V4-Flash-0731 · TP=4 · 4× DGX Spark
 
 **123.13 tok/s** single-stream decode. Here is the config, then every variable I tested to get
-there — including the ones that lost.
+there — including the ones that lost. The tuning target throughout is my real agentic workload
+(see the README's premise section), not a benchmark — where a knob's answer depends on the
+workload, I say so.
 
 ```bash
 vllm serve /path/to/DeepSeek-V4-Flash-0731 \

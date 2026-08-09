@@ -2,6 +2,32 @@
 
 Tuning DeepSeek-V4-Flash-0731 on 4× DGX Spark, one variable at a time.
 
+## The premise, stated up front
+
+**This cluster was built and tuned around one specific consumer: Hermes, my resident agent,
+and the workload it actually generates.** Not wikitext perplexity, not a 2K-prompt decode
+bench, not somebody's screenshot. As far as I know, nobody else has published a serving
+recipe built around a measured agentic workload as the tuning target — every recipe I've
+studied optimizes a benchmark and hopes the workload follows.
+
+The workload, from the server's own counters, is what every decision below traces back to:
+
+- **Bimodal by nature.** ~80% of requests are small tool-result round trips (≤2K tokens);
+  ~30% of the rest carry 200K+ token session trunks. The token-hours live in the deep end;
+  the request count lives in the shallow end. Most knobs have OPPOSITE answers per regime.
+- **Extremely cache-dependent.** Agents re-send their whole session every turn: 96–98% of
+  prompt tokens hit the prefix cache, so only ~2.5K of a 150K prompt is ever computed. The
+  KV pool's "idle" capacity IS the product — it's the warehouse holding the trunks.
+- **Low concurrency, deep sessions.** Average 1.3–2.4 concurrent, bursts to ~11. That's why
+  the batch-aware ladder lost (it pays only at sustained C=12) and why single-stream depth
+  performance beats aggregate throughput as the objective.
+- **Tool-calling with thinking off.** Structured output constraints on nearly every turn;
+  context ceiling (393,216) set from the measured p99 of real sessions, not from marketing.
+
+If your workload looks like this — a long-lived agent grinding inside codebases — this recipe
+should transfer. If your workload is chat or batch, half of my decisions are wrong for you,
+and the RECIPE tells you which measurements to redo.
+
 **[→ THE RECIPE](RECIPE.md)** — the config, and every knob I tested to get there, including the
 values that lost.
 
