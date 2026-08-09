@@ -129,3 +129,51 @@ fingerprint archived alongside it.
 ```
 measured 2026-08-05 · vLLM 0.25.2.dev0+g752a3a504 · 4x DGX Spark GB10 sm_121a · aarch64 CUDA 13
 ```
+
+
+---
+
+## Update: the depth sweep, the ladder, and measuring at your real traffic shape
+
+Everything above was measured on a fixed short-prompt protocol — the right ruler for the
+head-to-head it was built for, and the wrong ruler for tuning a cluster that serves 150K-token
+agentic prompts. I re-ran the whole speculative-decoding question at ~105K context, one
+variable per boot, three probes per config (deep single-stream, a C=12 small-request storm,
+and a cold deep prefill fired INTO a C=11 storm — the nastiest traffic shape I know how to
+generate). A config that errored under any probe was disqualified regardless of speed. None did.
+
+### Depth, closed
+
+```
+k     deep tok/s   ms/step   accept    storm agg
+3     40.6         69.9      61.2%      91.8
+5     49.3         70.3      51.9%     142.0
+7     68.6         54.7      39.4%     126.6      <- winner, kept
+8     55.2         59.7      28.9%     133.3
+```
+
+k=7 wins by 39% over the community-consensus k=5 and 69% over k=3 — on THIS image. Shallower
+k also steps SLOWER here, which killed my own verify-cost theory: the image's kernels are
+dspark7-specialized. Depth is an engine-build property. Measure yours; don't inherit mine.
+
+### The ladder, retired
+
+The batch-aware draft ladder I previously shipped costs ~7% single-stream against static k=7
+and only pays at sustained C=12, which my traffic visits rarely. Removed. Details in RECIPE.md.
+
+### Per-position acceptance is the drafter's EKG
+
+`vllm:spec_decode_num_accepted_tokens_per_pos_total` divided position-by-position gives a
+conditional acceptance curve. Healthy here: 0.91 / 0.87 / 0.85 / 0.82 / 0.80 / 0.74 / 0.70 —
+smooth decay, with a visible slope break right where the checkpoint declares
+`dspark_block_size: 5`. Positions past the declared block still carried 14% of accepted
+tokens, so I kept k=7 anyway — but a BROKEN drafter announces itself on this curve as a
+front-loaded collapse (0.63 / 0.28 / 0.18 ...) long before you'd diagnose it from tok/s.
+Two community deployments lost days to exactly that signature. Watch the curve, not the mean.
+
+### Two numbers, always
+
+Short-protocol numbers sell; production numbers serve. This cluster is 123.13 tok/s on the
+former and 57.9 on the latter (84.7 ms/step at ~150K mean prompts, 96–98% prefix-cache hit,
+zero preemptions across days of agentic traffic). Publishing one without the other is how
+this community keeps confusing itself. The prompt length is part of the number.

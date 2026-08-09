@@ -9,6 +9,12 @@ values that lost.
 Same prompt, same protocol, n=10 each, distributions non-overlapping — my slowest run beat their
 fastest.
 
+Be clear about what that number is: a fixed ~2K-token protocol, matched to the reference so the
+comparison is honest. At my real production shape (~150K mean prompts, agentic tool-calling
+traffic) the same cluster serves **57.9 tok/s per stream at 84.7 ms/step**, and ~62–69 on a
+clean lane at 105K context. Both numbers are real; they answer different questions. If someone
+quotes you one number with no prompt length attached, ask for the prompt length.
+
 ```
                     mine     reference
 mean              123.13        104.17

@@ -16,8 +16,7 @@ vllm serve /path/to/DeepSeek-V4-Flash-0731 \
   --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' \
   --override-generation-config '{"temperature":0.0}' \
   --speculative-config '{"method":"dspark","num_speculative_tokens":7,
-      "draft_sample_method":"probabilistic",
-      "num_speculative_tokens_per_batch_size":[[1,4,7],[5,8,5],[9,12,3]]}' \
+      "draft_sample_method":"probabilistic"}' \
   --enable-prefix-caching --async-scheduling --enable-chunked-prefill \
   --tokenizer-mode deepseek_v4 --distributed-executor-backend mp \
   --moe-backend flashinfer_b12x --enable-flashinfer-autotune \
@@ -34,6 +33,63 @@ Result: KV pool **54.42 GiB / 4,676,943 tokens**, 11.89× concurrency at full co
 ---
 
 ## Every variable, one at a time
+
+### The batch-aware ladder — I built it, measured it, and removed it
+
+Earlier versions of this recipe used `num_speculative_tokens_per_batch_size:
+[[1,4,7],[5,8,5],[9,12,3]]` — deeper drafts at low concurrency, shallower under load. Sounded
+smart. Measured (same ~105K prompt, same protocol, one boot apart):
+
+```
+                       deep C=1     ms/step     storm C=12 aggregate
+k=7 with ladder        64.2         57.7        136.1
+k=7 static, no ladder  68.6         54.7        126.6
+```
+
+The ladder costs ~7% single-stream for a ~7% aggregate win at C=12 — and my real traffic
+averages concurrency 1.3–2.4. The mechanism itself carries per-step overhead even when only
+the first rung is active. If your workload lives at high sustained concurrency, the ladder may
+earn its keep; mine doesn't, so it's gone.
+
+### `num_speculative_tokens` — the full sweep, and why community advice didn't transfer
+
+Everyone told me k=3 (one 4-node cluster runs it) or k=5 (a 2-node recipe corrected to it —
+it matches the checkpoint's declared `dspark_block_size`). I ran the whole bracket at ~105K
+context, one boot each:
+
+```
+k=3    40.6 tok/s    69.9 ms/step    accept 61.2%
+k=5    49.3          70.3            accept 51.9%
+k=7    68.6          54.7            accept 39.4%     <- kept
+k=8    55.2          59.7            accept 28.9%
+```
+
+Two things worth staring at. First, shallower k has SLOWER steps here — the opposite of the
+verify-cost intuition. This image's kernels are built as `dspark7`; its graphs and paths are
+specialized for k=7's shapes. Second, acceptance falls as k rises but tokens-per-step more
+than compensates until k=8, where acceptance collapses past the drafter's trained reach.
+The general lesson: k is a property of your ENGINE BUILD, not of the model. Community numbers
+from other engines told me nothing about mine, and measuring took an evening.
+
+### `draft_sample_method: greedy` at temperature 0 — the theory that measured zero
+
+At temp 0, vLLM's rejection sampler accepts a draft token only if it equals the target's
+argmax. So probabilistic drafting computes a full distribution just to sample from it — greedy
+should be strictly better, and I predicted 3–13%. Measured: acceptance +0.2pt, decode within
+run noise. The draft distribution at temp 0 is so peaked that sampling lands on the argmax
+essentially every time. Probabilistic stays (it's what the non-zero-temperature path needs
+anyway). Prediction wrong, question closed, one boot spent.
+
+### `max_num_batched_tokens` 8264 vs 16456 — a real trade, measured both ways
+
+Raising the prefill chunk to 16456 cut cold 150K-prompt admission from 83s to 46s TTFT under
+concurrent load, and posted the best storm aggregate I measured (140+ tok/s). I ran it in
+production for a day and reverted. Why: every prefill chunk stalls ALL concurrent decode
+streams for that step, and doubling the chunk doubles the stall. With a warm prefix cache
+(96–98% hits here) cold admissions are rare, so the win almost never fires — but the decode
+chop under concurrent deep sessions is constant. If your cache runs cold or your traffic is
+admission-heavy, take 16456. If your sessions are long-lived and cache-warm, keep 8264.
+
 
 I changed one thing per boot and measured. Nothing below is inferred from a spec sheet.
 
