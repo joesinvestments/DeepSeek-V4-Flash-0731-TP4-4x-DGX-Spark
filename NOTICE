@@ -1,7 +1,7 @@
 DeepSeek-V4-Flash-0731 TP4 on 4x DGX Spark
 Copyright 2026 joesinvestments
 
-Licensed under the Apache License, Version 2.0 (see LICENSE).
+Licensed under the MIT License (see LICENSE).
 All measurement instruments and configuration in this repository are original work.
 The serving stack it documents builds on the anemll vLLM image and community findings
 credited inline in the README.
